@@ -73,7 +73,6 @@ async def create_product(product: ProductModel, db: Session = Depends(get_db)):
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
-    return db_product
 
     return {**db_product.__dict__, "applicableAddons": json.loads(db_product.applicableAddons)}
 
