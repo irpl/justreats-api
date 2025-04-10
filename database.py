@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, ForeignKey, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
@@ -48,6 +48,19 @@ class Addon(Base):
     
     # For storing applicableProducts as a JSON string
     applicableProducts = Column(String)
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(String)
+    date = Column(DateTime)
+    endDate = Column(DateTime)
+    location = Column(String)
+    image = Column(String)
+    active = Column(Boolean, default=True)
+    featured = Column(Boolean, default=False)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
