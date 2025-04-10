@@ -41,7 +41,7 @@ class ProductModel(BaseModel):
     eventId: Optional[int] = None
 
 
-@app.post("/products", response_model=ProductModel)
+@app.post("/api/products", response_model=ProductModel)
 async def create_product(product: ProductModel, db: Session = Depends(get_db)):    
     # Validate eventId is provided when eventOnly is true
     if product.eventOnly and product.eventId is None:
@@ -68,19 +68,19 @@ async def create_product(product: ProductModel, db: Session = Depends(get_db)):
 
     return {**db_product.__dict__, "applicableAddons": json.loads(db_product.applicableAddons)}
 
-@app.get("/products", response_model=List[ProductModel])
+@app.get("/api/products", response_model=List[ProductModel])
 async def get_products(page: int = 1, size: int = 1, db: Session = Depends(get_db)):
     products = db.query(Product).filter(Product.available == True).limit(size).offset((page - 1) * size)
     return [{**product.__dict__, "applicableAddons": json.loads(product.applicableAddons)} for product in products]
 
-@app.get("/products/{product_id}", response_model=ProductModel)
+@app.get("/api/products/{product_id}", response_model=ProductModel)
 async def get_product(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
 
-@app.put("/products/{product_id}", response_model=ProductModel)
+@app.put("/api/products/{product_id}", response_model=ProductModel)
 async def update_product(product_id: int, updated_product: ProductModel, db: Session = Depends(get_db)):
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if db_product is None:
@@ -102,7 +102,7 @@ async def update_product(product_id: int, updated_product: ProductModel, db: Ses
     db.refresh(db_product)
     return {**db_product.__dict__, "applicableAddons": json.loads(db_product.applicableAddons)}
 
-@app.delete("/products/{product_id}")
+@app.delete("/api/products/{product_id}")
 async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db_product = db.query(Product).filter(Product.id == product_id).first()
     if db_product is None:
