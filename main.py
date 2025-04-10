@@ -70,7 +70,7 @@ async def create_product(product: ProductModel, db: Session = Depends(get_db)):
 
 @app.get("/api/products", response_model=List[ProductModel])
 async def get_products(page: int = 1, size: int = 1, db: Session = Depends(get_db)):
-    products = db.query(Product).filter(Product.available == True).limit(size).offset((page - 1) * size)
+    products = db.query(Product).limit(size).offset((page - 1) * size)
     return [{**product.__dict__, "applicableAddons": json.loads(product.applicableAddons)} for product in products]
 
 @app.get("/api/products/{product_id}", response_model=ProductModel)
@@ -78,7 +78,7 @@ async def get_product(product_id: int, db: Session = Depends(get_db)):
     product = db.query(Product).filter(Product.id == product_id).first()
     if product is None:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product
+    return {**product.__dict__, "applicableAddons": json.loads(product.applicableAddons)}
 
 @app.put("/api/products/{product_id}", response_model=ProductModel)
 async def update_product(product_id: int, updated_product: ProductModel, db: Session = Depends(get_db)):
