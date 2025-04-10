@@ -5,7 +5,7 @@ from typing import List, Optional
 import uvicorn
 import json
 from sqlalchemy.orm import Session
-from database import SessionLocal, Product, init_db
+from database import SessionLocal, Product, Addon, init_db
 
 app = FastAPI(title="JustTreats API", description="API for managing cake and pastry orders")
 
@@ -40,6 +40,14 @@ class ProductModel(BaseModel):
     eventOnly: bool
     eventId: Optional[int] = None
 
+# Addon Models
+class AddonModel(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: str
+    price: float
+    available: bool
+    applicableProducts: List[int]
 
 @app.post("/api/products", response_model=ProductModel)
 async def create_product(product: ProductModel, db: Session = Depends(get_db)):    
@@ -65,6 +73,7 @@ async def create_product(product: ProductModel, db: Session = Depends(get_db)):
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
+    return db_product
 
     return {**db_product.__dict__, "applicableAddons": json.loads(db_product.applicableAddons)}
 
@@ -111,6 +120,71 @@ async def delete_product(product_id: int, db: Session = Depends(get_db)):
     db.delete(db_product)
     db.commit()
     return {"message": "Product deleted successfully"}
+
+# Addon Endpoints
+@app.post("/api/addons/", response_model=AddonModel)
+async def create_addon(addon: AddonModel, db: Session = Depends(get_db)):
+    # Check if addon with same ID already exists
+    db_addon = db.query(Addon).filter(Addon.id == addon.id).first()
+    if db_addon:
+        raise HTTPException(status_code=400, detail="Addon with this ID already exists")
+    
+    # Convert applicableProducts to JSON string
+    applicable_products_json = json.dumps(addon.applicableProducts)
+    
+    db_addon = Addon(
+        id=addon.id,
+        name=addon.name,
+        description=addon.description,
+        price=addon.price,
+        available=addon.available,
+        applicableProducts=applicable_products_json
+    )
+    
+    db.add(db_addon)
+    db.commit()
+    db.refresh(db_addon)
+    return {**db_addon.__dict__, "applicableProducts": json.loads(db_addon.applicableProducts)}
+
+@app.get("/api/addons/", response_model=List[AddonModel])
+async def get_addons(db: Session = Depends(get_db)):
+    addons = db.query(Addon).all()
+    return [{**addon.__dict__, "applicableProducts": json.loads(addon.applicableProducts)} for addon in addons]
+
+@app.get("/api/addons/{addon_id}", response_model=AddonModel)
+async def get_addon(addon_id: int, db: Session = Depends(get_db)):
+    addon = db.query(Addon).filter(Addon.id == addon_id).first()
+    if addon is None:
+        raise HTTPException(status_code=404, detail="Addon not found")
+    return {**addon.__dict__, "applicableProducts": json.loads(addon.applicableProducts)}
+
+@app.put("/api/addons/{addon_id}", response_model=AddonModel)
+async def update_addon(addon_id: int, updated_addon: AddonModel, db: Session = Depends(get_db)):
+    db_addon = db.query(Addon).filter(Addon.id == addon_id).first()
+    if db_addon is None:
+        raise HTTPException(status_code=404, detail="Addon not found")
+    
+    # Update addon fields
+    for field, value in updated_addon.model_dump().items():
+        if field == "id":
+            continue
+        if field == "applicableProducts":
+            value = json.dumps(value)
+        setattr(db_addon, field, value)
+    
+    db.commit()
+    db.refresh(db_addon)
+    return {**db_addon.__dict__, "applicableProducts": json.loads(db_addon.applicableProducts)}
+
+@app.delete("/api/addons/{addon_id}")
+async def delete_addon(addon_id: int, db: Session = Depends(get_db)):
+    db_addon = db.query(Addon).filter(Addon.id == addon_id).first()
+    if db_addon is None:
+        raise HTTPException(status_code=404, detail="Addon not found")
+    
+    db.delete(db_addon)
+    db.commit()
+    return {"message": "Addon deleted successfully"}
 
 # if __name__ == "__main__":
 #     import os

@@ -37,6 +37,18 @@ class Product(Base):
     # For storing applicableAddons as a JSON string
     applicableAddons = Column(String)
 
+class Addon(Base):
+    __tablename__ = "addons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True)
+    description = Column(String)
+    price = Column(Float)
+    available = Column(Boolean, default=True)
+    
+    # For storing applicableProducts as a JSON string
+    applicableProducts = Column(String)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
