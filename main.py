@@ -1,14 +1,27 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import uvicorn
 import json
 from sqlalchemy.orm import Session
-from database import SessionLocal, Product, Addon, Event, init_db
-from datetime import datetime
+from database import SessionLocal, Product, Addon, Event, Banner, Contact, Admin, init_db
+from datetime import datetime, timedelta
+from auth import authenticate_admin, create_access_token, init_admin
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="JustTreats API", description="API for managing cake and pastry orders")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize admin account at startup
+    db = next(get_db())
+    init_admin(db)
+    yield
+
+app = FastAPI(
+    title="JustTreats API", 
+    description="API for managing cake and pastry orders",
+    lifespan=lifespan
+)
 
 # Initialize database
 init_db()
@@ -61,6 +74,53 @@ class EventModel(BaseModel):
     image: str
     active: bool
     featured: bool
+
+# Banner Model
+class BannerModel(BaseModel):
+    enabled: bool
+    imageUrl: str
+    title: str
+    description: str
+
+# Contact Model
+class ContactModel(BaseModel):
+    instagram: str
+    whatsapp: str
+    email: str
+
+# Admin Login Models
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class AdminLoginResponse(BaseModel):
+    success: bool
+    token: Optional[str] = None
+    user: Optional[Dict[str, Any]] = None
+    message: Optional[str] = None
+
+@app.post("/api/admin/login", response_model=AdminLoginResponse)
+async def admin_login(login_data: AdminLoginRequest, db: Session = Depends(get_db)):
+    admin = authenticate_admin(db, login_data.username, login_data.password)
+    if not admin:
+        return AdminLoginResponse(
+            success=False,
+            message="Invalid credentials"
+        )
+        
+    # Create access token
+    access_token = create_access_token(
+        data={"sub": admin.username, "id": admin.id}
+    )
+    
+    return AdminLoginResponse(
+        success=True,
+        token=access_token,
+        user={
+            "id": str(admin.id),
+            "username": admin.username
+        }
+    )
 
 @app.post("/api/products", response_model=ProductModel)
 async def create_product(product: ProductModel, db: Session = Depends(get_db)):    
@@ -265,6 +325,70 @@ async def delete_event(event_id: int, db: Session = Depends(get_db)):
     db.delete(db_event)
     db.commit()
     return {"message": "Event deleted successfully"}
+
+# Banner Endpoints
+@app.get("/api/banner", response_model=BannerModel)
+async def get_banner(db: Session = Depends(get_db)):
+    banner = db.query(Banner).first()
+    if banner is None:
+        raise HTTPException(status_code=404, detail="Banner configuration not found")
+    return banner
+
+@app.put("/api/banner", response_model=BannerModel)
+async def update_banner(banner_config: BannerModel, db: Session = Depends(get_db)):
+    # Check if banner config exists
+    db_banner = db.query(Banner).first()
+    
+    if db_banner is None:
+        # Create new banner if none exists
+        db_banner = Banner(
+            enabled=banner_config.enabled,
+            imageUrl=banner_config.imageUrl,
+            title=banner_config.title,
+            description=banner_config.description
+        )
+        db.add(db_banner)
+    else:
+        # Update existing banner
+        db_banner.enabled = banner_config.enabled
+        db_banner.imageUrl = banner_config.imageUrl
+        db_banner.title = banner_config.title
+        db_banner.description = banner_config.description
+    
+    db.commit()
+    db.refresh(db_banner)
+    return db_banner
+
+# Contact Endpoints
+@app.get("/api/contact", response_model=ContactModel)
+async def get_contact(db: Session = Depends(get_db)):
+    contact = db.query(Contact).first()
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact configuration not found")
+    return contact
+
+@app.put("/api/contact", response_model=ContactModel)
+async def update_contact(contact_config: ContactModel, db: Session = Depends(get_db)):
+    # Check if contact config exists
+    db_contact = db.query(Contact).first()
+    
+    if db_contact is None:
+        # Create new contact if none exists
+        db_contact = Contact(
+            instagram=contact_config.instagram,
+            whatsapp=contact_config.whatsapp,
+            email=contact_config.email
+        )
+        db.add(db_contact)
+    else:
+        # Update existing contact
+        db_contact.instagram = contact_config.instagram
+        db_contact.whatsapp = contact_config.whatsapp
+        db_contact.email = contact_config.email
+    
+    db.commit()
+    db.refresh(db_contact)
+    return db_contact
 
 if __name__ == "__main__":
     import os

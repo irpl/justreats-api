@@ -62,6 +62,30 @@ class Event(Base):
     active = Column(Boolean, default=True)
     featured = Column(Boolean, default=False)
 
+class Banner(Base):
+    __tablename__ = "banners"
+
+    id = Column(Integer, primary_key=True, index=True)
+    enabled = Column(Boolean, default=True)
+    imageUrl = Column(String)
+    title = Column(String)
+    description = Column(String)
+
+class Contact(Base):
+    __tablename__ = "contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    instagram = Column(String)
+    whatsapp = Column(String)
+    email = Column(String)
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
