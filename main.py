@@ -1,13 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
 import json
 from sqlalchemy.orm import Session
-from database import SessionLocal, Product, Addon, Event, Banner, Contact, Admin, init_db
-from datetime import datetime, timedelta
-from auth import authenticate_admin, create_access_token, init_admin
+from database import SessionLocal, Product, Addon, Event, Banner, Contact, Admin, Order, init_db
+from datetime import datetime, timedelta, timezone
+from auth import authenticate_admin, create_access_token, init_admin, verify_token
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -42,6 +43,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Setup security
+security = HTTPBearer()
 
 class ProductModel(BaseModel):
     id: Optional[int] = None
@@ -98,6 +102,33 @@ class AdminLoginResponse(BaseModel):
     token: Optional[str] = None
     user: Optional[Dict[str, Any]] = None
     message: Optional[str] = None
+
+# Order Models
+class OrderAddon(BaseModel):
+    addonId: int
+    quantity: int
+    notes: Optional[str] = ""
+
+class OrderItem(BaseModel):
+    productId: int
+    quantity: int
+    addons: List[OrderAddon] = []
+
+class OrderCustomer(BaseModel):
+    name: str
+    email: str
+    phone: str
+    contactMethod: str
+    delivery: bool
+    deliveryAddress: Optional[str] = None
+    pickupAtEvent: bool
+
+class OrderModel(BaseModel):
+    id: Optional[int] = None
+    date: Optional[datetime] = None
+    items: List[OrderItem]
+    customer: OrderCustomer
+    total: Optional[float] = None
 
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
 async def admin_login(login_data: AdminLoginRequest, db: Session = Depends(get_db)):
@@ -389,6 +420,98 @@ async def update_contact(contact_config: ContactModel, db: Session = Depends(get
     db.commit()
     db.refresh(db_contact)
     return db_contact
+
+# Order Endpoints
+@app.post("/api/orders", response_model=OrderModel)
+async def create_order(order: OrderModel, db: Session = Depends(get_db)):
+    # Set the current date
+    current_date = datetime.now(timezone.utc)
+    
+    # Calculate total price by fetching product and addon details
+    total_price = 0
+    
+    # Process each item in the order
+    for item in order.items:
+        # Get the product
+        product = db.query(Product).filter(Product.id == item.productId).first()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product with ID {item.productId} not found")
+        
+        # Add product price to total
+        total_price += product.price * item.quantity
+        
+        # Process addons for this item
+        for addon_item in item.addons:
+            # Get the addon
+            addon = db.query(Addon).filter(Addon.id == addon_item.addonId).first()
+            if not addon:
+                raise HTTPException(status_code=404, detail=f"Addon with ID {addon_item.addonId} not found")
+            
+            # Add addon price to total
+            total_price += addon.price * addon_item.quantity
+    
+    # Create new order
+    db_order = Order(
+        date=current_date,
+        items=json.dumps([item.model_dump() for item in order.items]),
+        customer=json.dumps(order.customer.model_dump()),
+        total=total_price
+    )
+    
+    db.add(db_order)
+    db.commit()
+    db.refresh(db_order)
+    
+    # Prepare the response
+    return OrderModel(
+        id=db_order.id,
+        date=db_order.date,
+        items=order.items,
+        customer=order.customer,
+        total=db_order.total
+    )
+
+@app.get("/api/orders", response_model=List[OrderModel])
+async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Depends(get_db)):
+    # Authentication is handled by the verify_token dependency
+    
+    orders = db.query(Order).all()
+    
+    # Convert the orders from database format to response format
+    result = []
+    for order in orders:
+        # Parse the JSON strings
+        items_data = json.loads(order.items)
+        customer_data = json.loads(order.customer)
+        
+        # Convert items data to OrderItem objects
+        items = []
+        for item_data in items_data:
+            # Convert addons data to OrderAddon objects
+            addons = []
+            for addon_data in item_data.get("addons", []):
+                addons.append(OrderAddon(**addon_data))
+            
+            # Create OrderItem with its addons
+            items.append(OrderItem(
+                productId=item_data["productId"],
+                quantity=item_data["quantity"],
+                addons=addons
+            ))
+        
+        # Create OrderCustomer object
+        customer = OrderCustomer(**customer_data)
+        
+        # Create complete OrderModel
+        result.append(OrderModel(
+            id=order.id,
+            date=order.date,
+            items=items,
+            customer=customer,
+            total=order.total
+        ))
+    
+    return result
 
 if __name__ == "__main__":
     import os
