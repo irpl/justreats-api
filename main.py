@@ -180,8 +180,14 @@ async def create_product(product: ProductModel, db: Session = Depends(get_db)):
     return {**db_product.__dict__, "applicableAddons": json.loads(db_product.applicableAddons)}
 
 @app.get("/api/products", response_model=List[ProductModel])
-async def get_products(page: int = 1, size: int = 1, db: Session = Depends(get_db)):
-    products = db.query(Product).limit(size).offset((page - 1) * size)
+async def get_products(available: Optional[bool] = None, page: int = 1, size: int = 10, db: Session = Depends(get_db)):
+    query = db.query(Product)
+
+    if available is not None:
+        query = query.filter(Product.available == available)
+
+    products = query.limit(size).offset((page - 1) * size)
+
     return [{**product.__dict__, "applicableAddons": json.loads(product.applicableAddons)} for product in products]
 
 @app.get("/api/products/{product_id}", response_model=ProductModel)
