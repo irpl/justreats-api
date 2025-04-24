@@ -477,6 +477,45 @@ async def create_order(order: OrderModel, db: Session = Depends(get_db)):
         total=db_order.total
     )
 
+@app.put("/api/orders/{order_id}", response_model=OrderModel)
+async def update_order(order_id: int, updated_order: OrderModel, db: Session = Depends(get_db)):
+    db_order = db.query(Order).filter(Order.id == order_id).first()
+    if db_order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Calculate total price by fetching product and addon details
+    total_price = 0
+    
+    # Process each item in the order
+    for item in updated_order.items:
+        # Get the product
+        product = db.query(Product).filter(Product.id == item.productId).first()
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product with ID {item.productId} not found")
+        
+        # Add product price to total
+        total_price += product.price * item.quantity
+        
+        # Process addons for this item
+        for addon_item in item.addons:
+            # Get the addon
+            addon = db.query(Addon).filter(Addon.id == addon_item.addonId).first()
+            if not addon:
+                raise HTTPException(status_code=404, detail=f"Addon with ID {addon_item.addonId} not found")
+            
+            # Add addon price to total
+            total_price += addon.price * addon_item.quantity
+    
+    # Update the order data
+    db_order.items = json.dumps([item.model_dump() for item in updated_order.items])
+    db_order.customer = json.dumps(updated_order.customer.model_dump())
+    db_order.total = total_price
+    
+    db.commit()
+    db.refresh(db_order)
+
+    return updated_order
+
 @app.get("/api/orders", response_model=List[OrderModel])
 async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Depends(get_db)):
     # Authentication is handled by the verify_token dependency
