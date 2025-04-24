@@ -129,7 +129,7 @@ class OrderModel(BaseModel):
     items: List[OrderItem]
     customer: OrderCustomer
     total: Optional[float] = None
-        unique_order_id: Optional[str] = None
+    unique_order_id: Optional[str] = None
 
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
 async def admin_login(login_data: AdminLoginRequest, db: Session = Depends(get_db)):
