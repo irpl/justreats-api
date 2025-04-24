@@ -3,6 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import os
 from dotenv import load_dotenv
+import uuid
 from datetime import datetime
 
 # Load environment variables from .env file
@@ -92,12 +93,21 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(DateTime, default=datetime.now)
+    unique_order_id = Column(String, unique=True)
     items = Column(String)  # JSON string of ordered items
     customer = Column(String)  # JSON string of customer information
     total = Column(Float)
 
+    def generate_unique_id(self):
+        # Generate a unique ID using a combination of random letters and numbers
+        self.unique_order_id = str(uuid.uuid4()).replace("-", "")[:12]  # 12 characters long
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+
+
 
 def get_db():
     db = SessionLocal()

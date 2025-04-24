@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
-import json
+import json, uuid
 from sqlalchemy.orm import Session
 from database import SessionLocal, Product, Addon, Event, Banner, Contact, Admin, Order, init_db
 from datetime import datetime, timedelta, timezone
@@ -129,6 +129,7 @@ class OrderModel(BaseModel):
     items: List[OrderItem]
     customer: OrderCustomer
     total: Optional[float] = None
+        unique_order_id: Optional[str] = None
 
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
 async def admin_login(login_data: AdminLoginRequest, db: Session = Depends(get_db)):
@@ -461,7 +462,8 @@ async def create_order(order: OrderModel, db: Session = Depends(get_db)):
         date=current_date,
         items=json.dumps([item.model_dump() for item in order.items]),
         customer=json.dumps(order.customer.model_dump()),
-        total=total_price
+        total=total_price,
+        unique_order_id=uuid.uuid4().hex
     )
     
     db.add(db_order)
@@ -474,11 +476,12 @@ async def create_order(order: OrderModel, db: Session = Depends(get_db)):
         date=db_order.date,
         items=order.items,
         customer=order.customer,
-        total=db_order.total
+        total=db_order.total,
+        unique_order_id=db_order.unique_order_id
     )
 
-@app.put("/api/orders/{order_id}", response_model=OrderModel)
-async def update_order(order_id: int, updated_order: OrderModel, db: Session = Depends(get_db)):
+@app.put("/api/orders/unique/{order_id}", response_model=OrderModel)
+async def update_order_by_unique_id(order_id: str, updated_order: OrderModel, db: Session = Depends(get_db)):
     db_order = db.query(Order).filter(Order.id == order_id).first()
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -515,6 +518,27 @@ async def update_order(order_id: int, updated_order: OrderModel, db: Session = D
     db.refresh(db_order)
 
     return updated_order
+
+@app.get("/api/orders/unique/{unique_order_id}", response_model=OrderModel)
+async def get_order_by_unique_id(unique_order_id: str, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.unique_order_id == unique_order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    items_data = json.loads(order.items)
+    customer_data = json.loads(order.customer)
+    items = [OrderItem(**item_data) for item_data in items_data]
+    customer = OrderCustomer(**customer_data)
+
+    return OrderModel(
+        id=order.id,
+        date=order.date,
+        items=items,
+        customer=customer,
+        total=order.total,
+        unique_order_id=order.unique_order_id
+    )
+
 
 @app.get("/api/orders", response_model=List[OrderModel])
 async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Depends(get_db)):
@@ -553,7 +577,8 @@ async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Dep
             date=order.date,
             items=items,
             customer=customer,
-            total=order.total
+            total=order.total,
+            unique_order_id=order.unique_order_id
         ))
     
     return result
