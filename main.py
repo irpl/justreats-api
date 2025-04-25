@@ -10,6 +10,7 @@ from database import SessionLocal, Product, Addon, Event, Banner, Contact, Admin
 from datetime import datetime, timedelta, timezone
 from auth import authenticate_admin, create_access_token, init_admin, verify_token
 from contextlib import asynccontextmanager
+from enum import Enum
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -130,6 +131,16 @@ class OrderModel(BaseModel):
     customer: OrderCustomer
     total: Optional[float] = None
     unique_order_id: Optional[str] = None
+    status: Optional[str] = "ordered"
+
+class StatusEnum(str, Enum):
+    ordered = "ordered"
+    received = "received"
+    awaiting_payment = "awaiting payment"
+    rejected = "rejected"
+    cancelled = "cancelled"
+    paid = "paid"
+    shipped = "shipped"
 
 @app.post("/api/admin/login", response_model=AdminLoginResponse)
 async def admin_login(login_data: AdminLoginRequest, db: Session = Depends(get_db)):
@@ -477,12 +488,13 @@ async def create_order(order: OrderModel, db: Session = Depends(get_db)):
         items=order.items,
         customer=order.customer,
         total=db_order.total,
-        unique_order_id=db_order.unique_order_id
+        unique_order_id=db_order.unique_order_id,
+        status=db_order.status
     )
 
 @app.put("/api/orders/unique/{order_id}", response_model=OrderModel)
 async def update_order_by_unique_id(order_id: str, updated_order: OrderModel, db: Session = Depends(get_db)):
-    db_order = db.query(Order).filter(Order.id == order_id).first()
+    db_order = db.query(Order).filter(Order.unique_order_id == order_id).first()
     if db_order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     
@@ -513,11 +525,28 @@ async def update_order_by_unique_id(order_id: str, updated_order: OrderModel, db
     db_order.items = json.dumps([item.model_dump() for item in updated_order.items])
     db_order.customer = json.dumps(updated_order.customer.model_dump())
     db_order.total = total_price
+    if updated_order.status:
+        db_order.status = updated_order.status
     
     db.commit()
     db.refresh(db_order)
+    
+    # Return the updated order including the potentially updated status
+    # Load the updated order from the database to ensure consistency
+    items_data = json.loads(db_order.items)
+    customer_data = json.loads(db_order.customer)
+    items = [OrderItem(**item_data) for item_data in items_data]
+    customer = OrderCustomer(**customer_data)
 
-    return updated_order
+    return OrderModel(
+        id=db_order.id,
+        date=db_order.date,
+        items=items,
+        customer=customer,
+        total=db_order.total,
+        unique_order_id=db_order.unique_order_id,
+        status=db_order.status
+    )
 
 @app.get("/api/orders/unique/{unique_order_id}", response_model=OrderModel)
 async def get_order_by_unique_id(unique_order_id: str, db: Session = Depends(get_db)):
@@ -536,9 +565,9 @@ async def get_order_by_unique_id(unique_order_id: str, db: Session = Depends(get
         items=items,
         customer=customer,
         total=order.total,
-        unique_order_id=order.unique_order_id
+        unique_order_id=order.unique_order_id,
+        status=order.status
     )
-
 
 @app.get("/api/orders", response_model=List[OrderModel])
 async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Depends(get_db)):
@@ -578,7 +607,8 @@ async def get_orders(token_data: Dict = Depends(verify_token), db: Session = Dep
             items=items,
             customer=customer,
             total=order.total,
-            unique_order_id=order.unique_order_id
+            unique_order_id=order.unique_order_id,
+            status=order.status
         ))
     
     return result

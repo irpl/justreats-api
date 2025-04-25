@@ -93,10 +93,11 @@ class Order(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(DateTime, default=datetime.now)
-    unique_order_id = Column(String, unique=True)
+    unique_order_id = Column(String, unique=True, index=True)
     items = Column(String)  # JSON string of ordered items
     customer = Column(String)  # JSON string of customer information
     total = Column(Float)
+    status = Column(String, default="ordered")
 
     def generate_unique_id(self):
         # Generate a unique ID using a combination of random letters and numbers
